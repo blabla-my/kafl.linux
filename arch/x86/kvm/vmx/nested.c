@@ -6271,6 +6271,9 @@ u64 g2va_to_g1pa(struct kvm_vcpu *vcpu, struct vmcs12* vmcs12, u64 addr){
 
 	u64 gfn = 0;
 	u64 real_gfn = 0;
+	u64 translate_in = 0;
+	gpa_t ept12_gpa = INVALID_GPA;
+	struct x86_exception ept12_exception = { 0 };
 
 	/* Guest Level 1 VMM is not using EPT and no virtual memory */
 	if(!nested_cpu_has_ept(vmcs12)){
@@ -6287,7 +6290,15 @@ u64 g2va_to_g1pa(struct kvm_vcpu *vcpu, struct vmcs12* vmcs12, u64 addr){
 	//u8 data[8];
 	//r = kvm_read_guest_page_mmu(vcpu, vcpu->arch.walk_mmu, gfn, data, 0, 8, 0);
 	//printk("Data:\t%lx\t%x %x %x %x (Status: %lx)\n", guest_level_2_data_addr, data[0], data[1], data[2], data[3], r);
-	real_gfn = (u64)kvm_translate_gpa(vcpu, vcpu->arch.mmu, ((u64)gfn) << 12, 0, NULL);
+	translate_in = ((u64)gfn) << 12;
+	real_gfn = (u64)kvm_translate_gpa(vcpu, vcpu->arch.mmu, translate_in, 0, NULL);
+	/* In nested EPT mode, arch.mmu walks EPT12 and returns an L1 GPA. */
+	if (nested_cpu_has_ept(vmcs12) && translate_in)
+		ept12_gpa = vcpu->arch.mmu->gva_to_gpa(vcpu, vcpu->arch.mmu,
+							translate_in, 0,
+							&ept12_exception);
+	if (ept12_gpa != INVALID_GPA)
+		return (u64)ept12_gpa;
 
 	return real_gfn;
 }
